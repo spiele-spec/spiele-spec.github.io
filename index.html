@@ -1317,10 +1317,31 @@ async function doLogout() {
 
 async function showResetPw() {
   const input = document.getElementById('login-input').value.trim();
-  if(!input.includes('@')) { document.getElementById('login-err').textContent = 'Bitte erst E-Mail-Adresse eingeben.'; return; }
-  await window._fbResetPassword(window._fbAuth, input);
-  document.getElementById('login-err').textContent = '';
-  alert('✅ Passwort-Reset-E-Mail gesendet an: '+input);
+  const errEl = document.getElementById('login-err');
+  errEl.textContent = '';
+  if(!input) { errEl.textContent = 'Bitte E-Mail-Adresse oder Benutzernamen eingeben.'; return; }
+
+  let email = input;
+
+  // If no @ → treat as username, look up email in DB
+  if(!input.includes('@')) {
+    try {
+      const r = await fetch(DB + '/usernames/' + input.toLowerCase() + '.json');
+      const d = r.ok ? await r.json() : null;
+      if(!d?.email) { errEl.textContent = 'Benutzername nicht gefunden.'; return; }
+      email = d.email;
+    } catch(e) { errEl.textContent = 'Fehler beim Suchen des Benutzers.'; return; }
+  }
+
+  try {
+    await window._fbResetPassword(window._fbAuth, email);
+    errEl.style.color = '#27ae60';
+    errEl.textContent = '✅ Reset-Mail gesendet an: ' + email;
+    setTimeout(() => { errEl.textContent = ''; errEl.style.color = '#e74c3c'; }, 5000);
+  } catch(e) {
+    if(e.code === 'auth/user-not-found') errEl.textContent = 'Keine E-Mail-Adresse hinterlegt.';
+    else errEl.textContent = 'Fehler: ' + e.message;
+  }
 }
 
 function showUserMenu() {
