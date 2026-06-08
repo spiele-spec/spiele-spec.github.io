@@ -248,6 +248,10 @@ input[type=checkbox]{accent-color:#2980b9}
         <input class="fl-input" type="text" id="lw-interpret" placeholder="Interpret / Komponist (optional)" maxlength="80">
       </div>
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+        <select class="fl-input" id="lw-saison" style="flex:0 0 auto;width:auto;min-width:130px">
+          <option value="sommer">☀️ Sommer</option>
+          <option value="winter">❄️ Winter</option>
+        </select>
         <label style="display:flex;align-items:center;gap:7px;font-size:.85rem;cursor:pointer;user-select:none">
           <input type="checkbox" id="lw-chorsatz" style="accent-color:#27ae60;width:16px;height:16px">
           <span>Chorsatz vorhanden</span>
@@ -487,6 +491,29 @@ input[type=checkbox]{accent-color:#2980b9}
 </div>
 
 </div><!-- /content -->
+
+<div class="modal-overlay" id="modal-liedwunsch">
+  <div class="modal">
+    <h3>✏️ Liedwunsch bearbeiten</h3>
+    <input type="hidden" id="elw-key">
+    <div class="form-row"><input class="fl-input" type="text" id="elw-titel" placeholder="Liedtitel *" maxlength="100"></div>
+    <div class="form-row"><input class="fl-input" type="text" id="elw-interpret" placeholder="Interpret / Komponist" maxlength="80"></div>
+    <div class="form-row">
+      <select id="elw-saison" class="fl-input" style="flex:1">
+        <option value="sommer">☀️ Sommer</option>
+        <option value="winter">❄️ Winter</option>
+      </select>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:.88rem;cursor:pointer;margin:6px 0 4px">
+      <input type="checkbox" id="elw-chorsatz" style="accent-color:#27ae60;width:16px;height:16px">
+      <span>Chorsatz vorhanden</span>
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeModal()">Abbrechen</button>
+      <button class="btn btn-success" onclick="saveLiedwunschEdit()">💾 Speichern</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="modal-mitglied">
   <div class="modal">
@@ -1702,13 +1729,14 @@ async function submitLiedwunsch(){
   const titel=document.getElementById('lw-titel').value.trim();
   const interpret=document.getElementById('lw-interpret').value.trim();
   const chorsatz=document.getElementById('lw-chorsatz').checked;
+  const saison=document.getElementById('lw-saison').value;
   const name=document.getElementById('lw-name').value.trim()||currentUserProfile?.username||'Anonym';
   const res=document.getElementById('lw-result');
   if(!titel){res.style.color='#e74c3c';res.textContent='❌ Bitte Liedtitel eingeben.';return;}
   const btn=event.target; btn.disabled=true;
   try{
     await fetch(DB+'/liedwuensche.json',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({titel,interpret,chorsatz,name,datum:new Date().toISOString(),erledigt:false})});
+      body:JSON.stringify({titel,interpret,chorsatz,saison,name,datum:new Date().toISOString(),erledigt:false})});
     document.getElementById('lw-titel').value='';
     document.getElementById('lw-interpret').value='';
     document.getElementById('lw-chorsatz').checked=false;
@@ -1720,11 +1748,13 @@ async function submitLiedwunsch(){
 }
 
 async function toggleLiedwunschErledigt(key, current){
+  if(!hasPermission('lieder')) return;
   await fetch(DB+'/liedwuensche/'+key+'/erledigt.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(!current)});
   await loadLiedwuensche();
 }
 
 async function deleteLiedwunsch(key){
+  if(!hasPermission('lieder')) return;
   if(!confirm('Liedwunsch löschen?'))return;
   await fetch(DB+'/liedwuensche/'+key+'.json',{method:'DELETE'});
   await loadLiedwuensche();
@@ -1734,8 +1764,7 @@ function renderLiedwuensche(){
   const el=document.getElementById('liedwunsch-list');
   if(!el)return;
   if(!liedwuensche.length){el.innerHTML='<div class="empty" style="padding:20px">Noch keine Liedwünsche eingetragen.</div>';return;}
-  const offen=liedwuensche.filter(w=>!w.erledigt);
-  const erledigt=liedwuensche.filter(w=>w.erledigt);
+  const canManage=hasPermission('lieder');
   function card(w){
     const d=new Date(w.datum);
     const ds=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -1752,22 +1781,58 @@ function renderLiedwuensche(){
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-          ${hasPermission('lieder')||currentUserProfile?.isAdmin?`<button class="btn btn-sm" style="background:${w.erledigt?'#ecf0f1':'#d5f5e3'};color:${w.erledigt?'#555':'#1a7a40'};font-size:.72rem" onclick="toggleLiedwunschErledigt('${w._key}',${w.erledigt})">${w.erledigt?'↩ Wieder öffnen':'✓ Erledigt'}</button>
-          <button class="btn btn-danger btn-sm del-btn" style="opacity:1;position:static" onclick="deleteLiedwunsch('${w._key}')">✕</button>`:''}
+          ${canManage?`<button class="btn btn-sm" style="background:${w.erledigt?'#ecf0f1':'#d5f5e3'};color:${w.erledigt?'#555':'#1a7a40'};font-size:.72rem" onclick="toggleLiedwunschErledigt('${w._key}',${w.erledigt})">${w.erledigt?'↩ Öffnen':'✓ Erledigt'}</button>
+          <button class="btn btn-sm" style="background:#eaf3fb;color:#2980b9;font-size:.72rem" onclick="editLiedwunsch('${w._key}')">✏️ Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" style="font-size:.72rem" onclick="deleteLiedwunsch('${w._key}')">✕ Löschen</button>`:''}
         </div>
       </div>
     </div>`;
   }
-  let html='';
-  if(offen.length){
-    html+=`<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#2980b9;margin-bottom:7px">Offen (${offen.length})</div>`;
-    html+=offen.map(card).join('');
+  function saisonBlock(key,label,color){
+    const items=liedwuensche.filter(w=>(w.saison||'sommer')===key);
+    if(!items.length) return '';
+    const offen=items.filter(w=>!w.erledigt);
+    const erledigt=items.filter(w=>w.erledigt);
+    let h=`<div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px;padding-bottom:6px;border-bottom:2px solid ${color}">
+      <span style="font-size:1.05rem;font-weight:700;color:${color}">${label}</span>
+      <span style="font-size:.78rem;color:#aaa">(${items.length})</span>
+    </div>`;
+    if(offen.length){
+      h+=`<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#2980b9;margin-bottom:6px">Offen (${offen.length})</div>`;
+      h+=offen.map(card).join('');
+    }
+    if(erledigt.length){
+      h+=`<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#27ae60;margin:10px 0 6px">Erledigt (${erledigt.length})</div>`;
+      h+=erledigt.map(card).join('');
+    }
+    return h;
   }
-  if(erledigt.length){
-    html+=`<div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#27ae60;margin:12px 0 7px">Erledigt (${erledigt.length})</div>`;
-    html+=erledigt.map(card).join('');
-  }
-  el.innerHTML=html;
+  el.innerHTML = saisonBlock('sommer','☀️ Sommer','#e67e22') + saisonBlock('winter','❄️ Winter','#1a6fa8');
+}
+
+function editLiedwunsch(key){
+  if(!hasPermission('lieder')) return;
+  const w=liedwuensche.find(x=>x._key===key);
+  if(!w) return;
+  document.getElementById('elw-key').value=key;
+  document.getElementById('elw-titel').value=w.titel||'';
+  document.getElementById('elw-interpret').value=w.interpret||'';
+  document.getElementById('elw-saison').value=w.saison||'sommer';
+  document.getElementById('elw-chorsatz').checked=!!w.chorsatz;
+  document.getElementById('modal-liedwunsch').classList.add('open');
+}
+
+async function saveLiedwunschEdit(){
+  if(!hasPermission('lieder')) return;
+  const key=document.getElementById('elw-key').value;
+  const titel=document.getElementById('elw-titel').value.trim();
+  if(!titel){alert('Bitte einen Liedtitel eingeben.');return;}
+  const interpret=document.getElementById('elw-interpret').value.trim();
+  const saison=document.getElementById('elw-saison').value;
+  const chorsatz=document.getElementById('elw-chorsatz').checked;
+  await fetch(DB+'/liedwuensche/'+key+'.json',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({titel,interpret,saison,chorsatz})});
+  closeModal();
+  await loadLiedwuensche();
 }
 
 // ===== GEBURTSTAGE IN TERMINE =====
