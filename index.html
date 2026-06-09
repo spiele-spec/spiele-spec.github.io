@@ -391,6 +391,11 @@ input[type=checkbox]{accent-color:#2980b9}
 <div class="page admin-only" id="p-konsole">
   <div class="card">
     <div class="card-title">⚙️ Admin-Konsole</div>
+    <div class="konsole-section" style="border-color:#27ae60;background:#f0fff4">
+      <div class="konsole-title">✏️ Bearbeiten-Modus</div>
+      <div style="font-size:.83rem;color:#666;margin-bottom:10px">Wenn <strong>aus</strong>, siehst du die App wie ein normales Mitglied (übersichtlich). Zum <strong>Anlegen oder Bearbeiten</strong> von Terminen, Proben, Liedern usw. hier einschalten – die Admin-Werkzeuge erscheinen dann auf allen Seiten.</div>
+      <button class="editmode-btn btn btn-sm" onclick="setEditMode(!editMode)">✏️ Bearbeiten-Modus einschalten</button>
+    </div>
     <div class="konsole-section">
       <div class="konsole-title">🔔 Push-Benachrichtigungen</div>
       <div style="font-size:.83rem;color:#666;margin-bottom:10px">Bei welchen Ereignissen soll automatisch eine Push-Nachricht an alle Mitglieder gehen?</div>
@@ -471,6 +476,11 @@ input[type=checkbox]{accent-color:#2980b9}
 </div>
 
 <div class="page" id="p-einstellungen">
+  <div class="card" id="editmode-card" style="max-width:480px;margin-bottom:12px;display:none;border-left:4px solid #27ae60">
+    <div class="card-title">✏️ Bearbeiten-Modus</div>
+    <div style="font-size:.83rem;color:#666;margin-bottom:10px">Wenn <strong>aus</strong>, siehst du die App wie ein normales Mitglied. Zum Anlegen oder Bearbeiten hier einschalten.</div>
+    <button class="editmode-btn btn btn-sm" onclick="setEditMode(!editMode)">✏️ Bearbeiten-Modus einschalten</button>
+  </div>
   <div class="card" style="max-width:480px;margin-bottom:12px">
     <div class="card-title">⚙️ Mein Konto</div>
     <div id="einst-info" style="background:#f4f6f8;border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:.88rem;line-height:1.8">
@@ -695,6 +705,27 @@ const INIT_TERMINE=[{"id": "23r7du2kk", "titel": "4 Chöre Konzert", "datum": "2
 
 let D=null, termine=[], kommentare=[], probenplan=[], mitglieder=[], liedwuensche=[];
 let adminMode = sessionStorage.getItem('chor_admin')==='1';
+let editMode = sessionStorage.getItem('chor_editmode')==='1';
+// Sichtbarkeit von Admin-Bearbeitungs-Elementen: nur wenn Bearbeiten-Modus AN und Berechtigung vorhanden
+function uiEdit(perm){ return editMode && hasPermission(perm); }
+function setEditMode(on){
+  editMode = !!on;
+  if(editMode) sessionStorage.setItem('chor_editmode','1'); else sessionStorage.removeItem('chor_editmode');
+  applyAdminMode();
+  if(typeof D!=='undefined' && D){ renderLieder(); renderProben(); }
+  if(typeof renderTermine==='function') renderTermine();
+  if(typeof renderMitglieder==='function') renderMitglieder();
+  if(typeof renderKommentare==='function') renderKommentare();
+  if(typeof renderLiedwuensche==='function') renderLiedwuensche();
+  updateEditModeUI();
+}
+function updateEditModeUI(){
+  document.querySelectorAll('.editmode-btn').forEach(b=>{
+    b.textContent = editMode ? '🔓 Bearbeiten-Modus ist AN – ausschalten' : '✏️ Bearbeiten-Modus einschalten';
+    b.style.background = editMode ? '#27ae60' : '#ecf0f1';
+    b.style.color = editMode ? 'white' : '#555';
+  });
+}
 let aktiveSaison='__all__', aktiveTerminTab='anstehend';
 let kalMonat=new Date().getMonth(), kalJahr=new Date().getFullYear(), kalSel=null;
 let adminPw = localStorage.getItem('chor_admin_pw') || ADMIN_PW;
@@ -732,15 +763,16 @@ function applyAdminMode(){
     const perm = el.getAttribute('data-perm');
     const inTabs = el.closest('.main-tabs');
     let show = false;
-    if(perm) show = adminMode || hasPermission(perm);
-    else show = adminMode;
+    if(perm) show = uiEdit(perm);       // Admin-Kästen (Formulare): nur im Bearbeiten-Modus
+    else show = adminMode;              // Konsole-Tab/-Seite: immer für Admins
     el.style.display = show ? (inTabs ? '' : 'block') : 'none';
   });
-  const _b=document.getElementById('admin-badge');if(_b)_b.style.display=adminMode?'':'none';
+  const _b=document.getElementById('admin-badge');if(_b)_b.style.display=(adminMode&&editMode)?'':'none';
   const _n=document.getElementById('notice-bar');if(_n)_n.style.display=adminMode?'none':'block';
-  if(adminMode||hasPermission('proben')){renderSongPicker();}
+  if(uiEdit('proben')){renderSongPicker();}
   if(adminMode){renderKonsole();}
   renderProben();
+  updateEditModeUI();
 }
 
 // PAGE
@@ -788,7 +820,7 @@ function renderLieder(){
   el.innerHTML=html;
 }
 function buildTbl(songs){
-  const canEdit = hasPermission('lieder');
+  const canEdit = uiEdit('lieder');
   return '<table><thead><tr><th>Lied</th><th>Letzte Probe</th><th style="text-align:center">Anzahl</th><th>Status</th><th style="text-align:center">Noten</th></tr></thead><tbody>'+songs.map(s=>{
     const openLink = s.pdf?`<a href="${esc(s.pdf)}" target="_blank" rel="noopener" style="text-decoration:none;font-size:1.15rem" title="Noten öffnen">📄</a>`:'';
     const editBtn = canEdit?`<button onclick="editSongPdf('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.45;padding:0 2px" title="Noten-Link bearbeiten">✏️</button>`:'';
@@ -948,7 +980,7 @@ function renderProben(){
     else planEl.innerHTML=upcoming.map(p=>{
       const songs=(p.songIds||[]).map(id=>{const s=allS.find(x=>x.id===id);return s?s.name:'?'}).join(', ');
       const isGeplant=p._src==='plan';
-      return`<div class="plan-item"><div style="font-weight:600;color:#1e8449;margin-bottom:2px">🎹 ${fmt(p.datum)}</div>${songs?`<div style="font-size:.8rem;color:#555">🎵 ${esc(songs)}</div>`:''}${p.notiz?`<div style="font-size:.8rem;color:#888;font-style:italic">💬 ${esc(p.notiz)}</div>`:''}${hasPermission('proben')?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteProbe('${p.id}',${isGeplant})">✕</button>`:''}</div>`;
+      return`<div class="plan-item"><div style="font-weight:600;color:#1e8449;margin-bottom:2px">🎹 ${fmt(p.datum)}</div>${songs?`<div style="font-size:.8rem;color:#555">🎵 ${esc(songs)}</div>`:''}${p.notiz?`<div style="font-size:.8rem;color:#888;font-style:italic">💬 ${esc(p.notiz)}</div>`:''}${uiEdit('proben')?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteProbe('${p.id}',${isGeplant})">✕</button>`:''}</div>`;
     }).join('');
   }
 
@@ -966,7 +998,7 @@ function renderProben(){
             <div class="probe-date">📋 ${fmt(p.datum)}</div>
             ${names?`<div class="probe-songs">🎵 ${esc(names)}</div>`:''}
             ${p.notiz?`<div class="probe-notes">💬 ${esc(p.notiz)}</div>`:''}
-            ${hasPermission('proben')?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteProbe('${p.id}',true)">✕</button>`:''}
+            ${uiEdit('proben')?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteProbe('${p.id}',true)">✕</button>`:''}
           </div>`;
         }
         const hw=p.hausaufgaben||{};
@@ -976,7 +1008,7 @@ function renderProben(){
           <div class="probe-songs">🎵 ${esc(names)}</div>
           ${p.notiz?`<div class="probe-notes">💬 ${esc(p.notiz)}</div>`:''}
           ${hwHtml?`<div style="background:#fff8e7;border-radius:5px;padding:6px 8px;margin-top:6px;font-size:.78rem;color:#7d6608"><strong>📝 Hausaufgaben:</strong>${hwHtml}</div>`:''}
-          ${hasPermission('proben')?`<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
+          ${uiEdit('proben')?`<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:#f39c12;color:white;font-size:.72rem" onclick="editHausaufgaben('${p.id}')">📝 HA</button>
             <button class="btn btn-danger btn-sm del-btn" onclick="deleteProbe('${p.id}',false)">✕</button>
           </div>`:''}
@@ -1026,7 +1058,7 @@ function terminHtml(t,past=false){
     ${!past?`<div class="vote-row" id="vrow-${t.id}">${buildVoteRow(t)}</div>`:''}
     <div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-sm" style="background:transparent;border:1px solid #8e44ad;color:#8e44ad;font-size:.72rem" onclick="exportTerminICS('${t.id}')">📥 .ics</button>
-      ${hasPermission('termine')?`
+      ${uiEdit('termine')?`
         ${(t.typ==='konzert'||t.typ==='fest')?`<button class="btn btn-sm" style="background:#3498db;color:white;font-size:.72rem" onclick="editSetliste('${t.id}')">🎵 Setliste</button>`:''}
         <button class="btn btn-danger btn-sm del-btn" style="opacity:1;position:static" onclick="deleteTermin('${t.id}')">✕</button>
       `:''}
@@ -1191,7 +1223,7 @@ function renderMitglieder(){
         ${m.adresse||m.plz?`<div class="mitglied-detail">📍 ${esc(m.adresse||'')} ${esc(m.plz||'')}</div>`:''}
         ${m.geburtstag?`<div class="mitglied-detail">🎂 ${esc(m.geburtstag)}</div>`:''}
       </div>
-      ${hasPermission('mitglieder')?`<div style="display:flex;flex-direction:column;gap:4px"><button class="btn btn-gray btn-sm" onclick="openEditMitglied('${m.nr||m.id}')">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteMitglied('${m.nr||m.id}')">✕</button></div>`:''}
+      ${uiEdit('mitglieder')?`<div style="display:flex;flex-direction:column;gap:4px"><button class="btn btn-gray btn-sm" onclick="openEditMitglied('${m.nr||m.id}')">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteMitglied('${m.nr||m.id}')">✕</button></div>`:''}
     </div>`;
   }).join('');
 }
@@ -1257,7 +1289,7 @@ function renderKommentare(){
   el.innerHTML=kommentare.map(k=>{
     const d=new Date(k.datum);
     const ds=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
-    return`<div class="kommentar"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span class="k-name">👤 ${esc(k.name)}</span><span class="k-meta">${ds}</span></div>${k.lied?`<div class="k-lied">🎵 ${esc(k.lied)}</div>`:''}<div class="k-text">${esc(k.text)}</div>${hasPermission('kommentare')&&k._key?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteKommentar('${k._key}')">✕</button>`:''}</div>`;
+    return`<div class="kommentar"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span class="k-name">👤 ${esc(k.name)}</span><span class="k-meta">${ds}</span></div>${k.lied?`<div class="k-lied">🎵 ${esc(k.lied)}</div>`:''}<div class="k-text">${esc(k.text)}</div>${uiEdit('kommentare')&&k._key?`<button class="btn btn-danger btn-sm del-btn" onclick="deleteKommentar('${k._key}')">✕</button>`:''}</div>`;
   }).join('');
 }
 async function submitKommentar(){
@@ -1871,7 +1903,7 @@ function renderLiedwuensche(){
   const el=document.getElementById('liedwunsch-list');
   if(!el)return;
   if(!liedwuensche.length){el.innerHTML='<div class="empty" style="padding:20px">Noch keine Liedwünsche eingetragen.</div>';return;}
-  const canManage=hasPermission('lieder');
+  const canManage=uiEdit('lieder');
   function card(w){
     const d=new Date(w.datum);
     const ds=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -2241,6 +2273,13 @@ function renderEinstellungen(){
   if(pw2) pw2.value='';
   const pr = document.getElementById('push-result'); if(pr) pr.textContent='';
   renderPushStatus();
+  // Bearbeiten-Modus-Karte nur für Bearbeiter (Admin oder mit Berechtigung) zeigen
+  const emCard = document.getElementById('editmode-card');
+  if(emCard){
+    const isEditor = adminMode || (p && (p.isAdmin || (Array.isArray(p.permissions) && p.permissions.length>0)));
+    emCard.style.display = isEditor ? 'block' : 'none';
+  }
+  updateEditModeUI();
 }
 
 async function saveAnzeigename(){
