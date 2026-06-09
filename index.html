@@ -2330,6 +2330,8 @@ async function togglePush(){
     sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: urlB64ToUint8(VAPID_PUBLIC) });
     await fetch(DB+'/pushsubs/'+currentUser.uid+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ sub: sub.toJSON(), name:(getUserVoteName()||''), ts:Date.now() })});
     res.style.color='#27ae60'; res.textContent='✅ Benachrichtigungen aktiviert!';
+    // Sofortige lokale Bestätigung – zeigt direkt, dass Benachrichtigungen ankommen
+    try{ await reg.showNotification('🎵 Chor Dölau', { body:'✅ Benachrichtigungen sind jetzt aktiviert!', icon:'/icon-192.png', badge:'/icon-192.png', tag:'welcome' }); }catch(e){}
     renderPushStatus();
   }catch(e){ res.style.color='#e74c3c'; res.textContent='❌ Fehler: '+(e.message||e); }
 }
@@ -2363,6 +2365,23 @@ async function notifyPush(eventKey, title, body){
   if(!pushSettings || !pushSettings[eventKey]) return;
   try{ await fetch(DB+'/pushqueue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title, body, ts:Date.now()})}); }
   catch(e){ console.warn('Push-Queue fehlgeschlagen', e); }
+}
+
+// Zeigt beim Öffnen der App eine lokale Benachrichtigung (nur wenn erlaubt, 1x pro Sitzung)
+async function showOpenNotification(){
+  try{
+    if(!('serviceWorker' in navigator) || !('Notification' in window)) return;
+    if(Notification.permission !== 'granted') return;
+    if(sessionStorage.getItem('open_notif_shown')) return;
+    sessionStorage.setItem('open_notif_shown','1');
+    const reg = await navigator.serviceWorker.ready;
+    const today = (typeof localToday==='function') ? localToday() : new Date().toISOString().split('T')[0];
+    let next=null;
+    (termine||[]).filter(t=>(t.datum_ende||t.datum)>=today).forEach(t=>{ if(!next||t.datum<next.d) next={d:t.datum, txt:'🗓️ '+t.titel}; });
+    (probenplan||[]).filter(p=>p.datum>=today).forEach(p=>{ if(!next||p.datum<next.d) next={d:p.datum, txt:'🎹 Probe'}; });
+    const body = next ? ('Nächstes: '+next.txt+' am '+fmt(next.d)) : 'Schön, dass du da bist! 🎵';
+    await reg.showNotification('🎵 Chor Dölau', { body, icon:'/icon-192.png', badge:'/icon-192.png', tag:'open' });
+  }catch(e){ /* still */ }
 }
 
 // ===== PERMISSIONS =====
@@ -2400,6 +2419,7 @@ async function loadAll(){
   await loadKommentare();
   await loadLiedwuensche();
   loadPushSettings();
+  showOpenNotification();
   applyAdminMode();
   // Auto-delete on load
   const autoDays=parseInt(localStorage.getItem('auto_delete_days')||'0');
