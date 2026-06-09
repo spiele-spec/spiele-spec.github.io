@@ -1,4 +1,4 @@
-const CACHE = 'chor-doelau-v1';
+const CACHE = 'chor-doelau-v2';
 const OFFLINE_FILES = ['/', '/index.html'];
 
 self.addEventListener('install', e => {
@@ -17,5 +17,33 @@ self.addEventListener('fetch', e => {
   // Network first, fall back to cache
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
+  );
+});
+
+// ===== PUSH-BENACHRICHTIGUNGEN =====
+// Wird auch ausgelöst, wenn die App geschlossen ist.
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data ? event.data.text() : '' }; }
+  const title = data.title || 'Chor Dölau';
+  const options = {
+    body: data.body || '',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-192.png',
+    data: { url: data.url || 'https://doelaudate.github.io' },
+    vibrate: [100, 50, 100]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tippen auf die Benachrichtigung öffnet die App
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || 'https://doelaudate.github.io';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) { if (c.url.indexOf('doelaudate') !== -1 && 'focus' in c) return c.focus(); }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
   );
 });
