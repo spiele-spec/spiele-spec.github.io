@@ -412,6 +412,16 @@ input[type=checkbox]{accent-color:#2980b9}
       </div>
       <div id="push-subs-count" style="font-size:.78rem;color:#aaa;margin-top:8px"></div>
     </div>
+    <div class="konsole-section" style="border-color:#e74c3c;background:#fff8f8">
+      <div class="konsole-title">📢 Wichtige Nachricht an alle senden</div>
+      <div style="font-size:.83rem;color:#666;margin-bottom:10px">Schreibt eine Push-Nachricht direkt an alle Mitglieder mit aktivierten Benachrichtigungen – z. B. „Probe fällt heute aus".</div>
+      <input type="text" id="broadcast-titel" class="fl-input" placeholder="Überschrift (z. B. ⚠️ Probe fällt aus)" maxlength="80" style="margin-bottom:8px">
+      <textarea id="broadcast-text" class="fl-input" placeholder="Deine Nachricht …" maxlength="250" style="min-height:70px;margin-bottom:8px"></textarea>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-danger btn-sm" onclick="sendBroadcast()">📢 An alle senden</button>
+        <span id="broadcast-result" style="font-size:.8rem"></span>
+      </div>
+    </div>
     <div class="konsole-section">
       <div class="konsole-title">📊 Datenübersicht</div>
       <div id="konsole-stats" style="font-size:.85rem;color:#555;line-height:1.8"></div>
@@ -2399,6 +2409,25 @@ async function sendTestPush(){
     setTimeout(()=>{if(r)r.textContent='';},7000);
   }catch(e){ r.style.color='#e74c3c'; r.textContent='❌ Fehler'; }
 }
+
+// Admin: freie Nachricht an alle abonnierten Geräte
+async function sendBroadcast(){
+  if(!(adminMode || (currentUserProfile && (currentUserProfile.isAdmin || (currentUserProfile.permissions||[]).length)))) return;
+  const titelEl=document.getElementById('broadcast-titel');
+  const textEl=document.getElementById('broadcast-text');
+  const r=document.getElementById('broadcast-result');
+  const titel=titelEl.value.trim();
+  const text=textEl.value.trim();
+  if(!text){ r.style.color='#e74c3c'; r.textContent='❌ Bitte eine Nachricht eingeben.'; return; }
+  if(!confirm('Push-Nachricht jetzt an ALLE Mitglieder senden?\n\n'+(titel?titel+'\n':'')+text)) return;
+  r.style.color='#2980b9'; r.textContent='⏳ wird gesendet…';
+  try{
+    await fetch(DB+'/pushqueue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:(titel||'📢 Chor Dölau'), body:text, ts:Date.now()})});
+    titelEl.value=''; textEl.value='';
+    r.style.color='#27ae60'; r.textContent='✅ Gesendet – kommt in 1–5 Min. bei allen an.';
+    setTimeout(()=>{if(r)r.textContent='';},8000);
+  }catch(e){ r.style.color='#e74c3c'; r.textContent='❌ Fehler beim Senden.'; }
+}
 // Legt eine Nachricht in die Warteschlange; ein automatischer Job verschickt sie.
 async function notifyPush(eventKey, title, body){
   if(!pushSettings || !pushSettings[eventKey]) return;
@@ -2458,7 +2487,6 @@ async function loadAll(){
   await loadKommentare();
   await loadLiedwuensche();
   loadPushSettings();
-  showOpenNotification();
   applyAdminMode();
   // Auto-delete on load
   const autoDays=parseInt(localStorage.getItem('auto_delete_days')||'0');
