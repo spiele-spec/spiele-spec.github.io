@@ -141,7 +141,6 @@ input[type=checkbox]{accent-color:#2980b9}
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
 <script>
   firebase.initializeApp({
     apiKey: "AIzaSyDtiIn1UzexFOmjBgr12SAerbjw_n8_pLo",
@@ -154,7 +153,6 @@ input[type=checkbox]{accent-color:#2980b9}
   });
   const _auth = firebase.auth();
   window._fbStorage = firebase.storage();
-  try { window._fbFunctions = firebase.app().functions('europe-west1'); } catch(e) { console.warn('functions init', e); }
   // Map to window globals used by the app
   window._fbAuth = _auth;
   window._fbSignIn = (auth, email, pw) => auth.signInWithEmailAndPassword(email, pw);
@@ -2353,17 +2351,18 @@ async function savePushSettings(){
 }
 async function sendTestPush(){
   const r=document.getElementById('push-settings-result');
-  if(!window._fbFunctions){ r.style.color='#e74c3c'; r.textContent='❌ Server noch nicht eingerichtet'; return; }
-  r.style.color='#2980b9'; r.textContent='⏳ sende…';
-  try{ const res=await window._fbFunctions.httpsCallable('sendNotification')({title:'Chor Dölau', body:'🔔 Test-Benachrichtigung'}); r.style.color='#27ae60'; r.textContent='✅ an '+(res.data&&res.data.sent)+' Gerät(e) gesendet'; }
-  catch(e){ r.style.color='#e74c3c'; r.textContent='❌ '+(e.message||e.code||'Fehler'); }
+  r.style.color='#2980b9'; r.textContent='⏳ Test wird verschickt…';
+  try{
+    await fetch(DB+'/pushqueue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'Chor Dölau', body:'🔔 Test-Benachrichtigung', ts:Date.now()})});
+    r.style.color='#27ae60'; r.textContent='✅ Test gesendet – kommt in 1–5 Min. auf abonnierten Geräten an.';
+    setTimeout(()=>{if(r)r.textContent='';},7000);
+  }catch(e){ r.style.color='#e74c3c'; r.textContent='❌ Fehler'; }
 }
-// Wird nach dem Anlegen von Terminen/Proben/etc. aufgerufen
+// Legt eine Nachricht in die Warteschlange; ein automatischer Job verschickt sie.
 async function notifyPush(eventKey, title, body){
   if(!pushSettings || !pushSettings[eventKey]) return;
-  if(!window._fbFunctions) return;
-  try{ await window._fbFunctions.httpsCallable('sendNotification')({title, body}); }
-  catch(e){ console.warn('Push-Versand fehlgeschlagen', e); }
+  try{ await fetch(DB+'/pushqueue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title, body, ts:Date.now()})}); }
+  catch(e){ console.warn('Push-Queue fehlgeschlagen', e); }
 }
 
 // ===== PERMISSIONS =====
