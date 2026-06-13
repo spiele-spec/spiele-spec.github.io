@@ -1264,11 +1264,21 @@ function renderAnwErfassen(){
 }
 function renderAnwRoster(){
   const roster=document.getElementById('anw-roster'); if(!roster||!anwWork) return;
-  const sorted=[...mitglieder].sort((a,b)=>memberName(a).localeCompare(memberName(b)));
-  roster.innerHTML=sorted.map(m=>{
-    const k=memberKey(m); const absent=anwWork.fehlt.has(k);
-    return `<button onclick="toggleAnw('${k}')" style="border:1.5px solid ${absent?'#e74c3c':'#27ae60'};background:${absent?'#fdecea':'#eafaf1'};color:${absent?'#922b21':'#1a7a40'};border-radius:16px;padding:5px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap">${absent?'❌':'✅'} ${esc(memberName(m))}</button>`;
-  }).join('');
+  const chip=(m)=>{ const k=memberKey(m); const absent=anwWork.fehlt.has(k);
+    return `<button onclick="toggleAnw('${k}')" style="border:1.5px solid ${absent?'#e74c3c':'#27ae60'};background:${absent?'#fdecea':'#eafaf1'};color:${absent?'#922b21':'#1a7a40'};border-radius:16px;padding:5px 11px;font-size:.8rem;cursor:pointer;white-space:nowrap">${absent?'❌':'✅'} ${esc(memberName(m))}</button>`; };
+  const gruppen=[['Sopran','🟠','#e67e22'],['Alt','🔵','#2980b9'],['Tenor','🟢','#27ae60'],['Bass','🟣','#8e44ad']];
+  let html='';
+  gruppen.forEach(([stimme,icon,color])=>{
+    const ms=mitglieder.filter(m=>(m.stimme||'')===stimme).sort((a,b)=>memberName(a).localeCompare(memberName(b)));
+    if(!ms.length) return;
+    html+=`<div style="width:100%;margin-bottom:6px"><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${color};margin-bottom:5px">${icon} ${stimme} (${ms.length})</div><div style="display:flex;flex-wrap:wrap;gap:6px">${ms.map(chip).join('')}</div></div>`;
+  });
+  // Mitglieder ohne zugeordnete Stimme
+  const ohne=mitglieder.filter(m=>!['Sopran','Alt','Tenor','Bass'].includes(m.stimme||'')).sort((a,b)=>memberName(a).localeCompare(memberName(b)));
+  if(ohne.length){
+    html+=`<div style="width:100%;margin-bottom:6px"><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#95a5a6;margin-bottom:5px">👤 Ohne Stimme (${ohne.length})</div><div style="display:flex;flex-wrap:wrap;gap:6px">${ohne.map(chip).join('')}</div></div>`;
+  }
+  roster.innerHTML=html;
   updateAnwSummary();
 }
 function toggleAnw(k){ if(!anwWork) return; if(anwWork.fehlt.has(k)) anwWork.fehlt.delete(k); else anwWork.fehlt.add(k); renderAnwRoster(); }
