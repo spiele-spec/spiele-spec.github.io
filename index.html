@@ -1093,7 +1093,7 @@ function allProbenSorted(){
   const alle=[...(probenplan||[]).map(p=>({...p,_src:'plan'})), ...((D.proben)||[]).map(p=>({...p,_src:'proben'}))];
   return alle.filter(p=>p.datum).sort((a,b)=>b.datum.localeCompare(a.datum));
 }
-function memberKey(m){ return String(m.nr||m.id); }
+function memberKey(m){ return String(m.id||m.nr); }
 function memberName(m){ return ((m.vorname||'')+' '+(m.nachname||'')).trim(); }
 // Vorab-Selbstabmeldungen ('nein') einem Mitglied zuordnen (über Benutzerprofil + Namens-Fallbacks)
 function _norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9äöüß]/g,''); }
@@ -1475,7 +1475,8 @@ async function addMitglied(){
   const nachname=document.getElementById('m-nachname').value.trim();
   const vorname=document.getElementById('m-vorname').value.trim();
   if(!nachname||!vorname){alert('Vor- und Nachname erforderlich.');return;}
-  const newM={id:uid(),nr:mitglieder.length+1,nachname,vorname,handy:document.getElementById('m-handy').value.trim(),telefon:document.getElementById('m-telefon').value.trim(),email:document.getElementById('m-email').value.trim(),geburtstag:document.getElementById('m-geburtstag').value.trim(),adresse:document.getElementById('m-adresse').value.trim(),plz:document.getElementById('m-plz').value.trim(),stimme:document.getElementById('m-stimme')?.value||''};
+  const maxNr=mitglieder.reduce((mx,x)=>Math.max(mx,parseInt(x.nr)||0),0);
+  const newM={id:uid(),nr:maxNr+1,nachname,vorname,handy:document.getElementById('m-handy').value.trim(),telefon:document.getElementById('m-telefon').value.trim(),email:document.getElementById('m-email').value.trim(),geburtstag:document.getElementById('m-geburtstag').value.trim(),adresse:document.getElementById('m-adresse').value.trim(),plz:document.getElementById('m-plz').value.trim(),stimme:document.getElementById('m-stimme')?.value||''};
   mitglieder.push(newM);
   await saveMitgliederToFB();
   ['m-nachname','m-vorname','m-handy','m-telefon','m-email','m-geburtstag','m-adresse','m-plz'].forEach(id=>document.getElementById(id).value='');
