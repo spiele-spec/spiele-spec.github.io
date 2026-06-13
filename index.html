@@ -603,6 +603,17 @@ input[type=checkbox]{accent-color:#2980b9}
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-hoer">
+  <div class="modal">
+    <h3>🎧 Hörbeispiele – <span id="hoer-songname"></span></h3>
+    <input type="hidden" id="hoer-songid">
+    <div style="font-size:.8rem;color:#888;margin-bottom:10px">Pro Stimme eine Aufnahme. Admins können mit dem Mikrofon aufnehmen, alle können anhören.</div>
+    <div id="hoer-body"></div>
+    <div id="hoer-status" style="font-size:.83rem;min-height:18px;margin-top:8px"></div>
+    <div class="modal-actions"><button class="btn btn-gray" onclick="closeHoer()">Schließen</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-songpdf">
   <div class="modal">
     <h3>📄 Noten – <span id="sp-songname"></span></h3>
@@ -902,8 +913,10 @@ function buildTbl(songs){
   return '<table><thead><tr><th>Lied</th><th>Letzte Probe</th><th style="text-align:center">Anzahl</th><th>Status</th><th style="text-align:center">Noten</th></tr></thead><tbody>'+songs.map(s=>{
     const openLink = s.pdf?`<a href="${esc(s.pdf)}" target="_blank" rel="noopener" style="text-decoration:none;font-size:1.15rem" title="Noten öffnen">📄</a>`:'';
     const uebenLink = s.uebe?`<a href="${esc(s.uebe)}" target="_blank" rel="noopener" style="text-decoration:none;font-size:1.1rem" title="Stimmcoach – Üben">🎤</a>`:'';
+    const hasHoer = s.hoer && (s.hoer.S||s.hoer.A||s.hoer.T||s.hoer.B);
+    const hoerBtn = (hasHoer||canEdit)?`<button onclick="openHoer('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:1.05rem;padding:0 1px" title="Hörbeispiele (S/A/T/B)">🎧</button>`:'';
     const editBtn = canEdit?`<button onclick="editSongPdf('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:.85rem;opacity:.45;padding:0 2px" title="Noten/Üben bearbeiten">✏️</button>`:'';
-    const cell = (openLink||uebenLink||editBtn) ? [openLink,uebenLink,editBtn].filter(Boolean).join(' ') : '—';
+    const cell = (openLink||uebenLink||hoerBtn||editBtn) ? [openLink,uebenLink,hoerBtn,editBtn].filter(Boolean).join(' ') : '—';
     return `<tr><td><strong>${esc(s.name)}</strong></td><td>${fmt(s.last)}</td><td style="text-align:center;color:#666">${s.count}×</td><td><span class="dot" style="background:${dotC(s.last)}"></span><span class="badge" style="${bdgS(s.last)}">${bdgT(s.last)}</span></td><td style="text-align:center;white-space:nowrap">${cell}</td></tr>`;
   }).join('')+'</tbody></table>';
 }
@@ -950,6 +963,98 @@ async function saveSongUebe(){
   await setSongUebe(id, u);
   closeModal();
 }
+
+// ===== HÖRBEISPIELE (Aufnahme pro Stimme) =====
+const HOER_VOICES=[['S','Sopran','#e67e22'],['A','Alt','#2980b9'],['T','Tenor','#27ae60'],['B','Bass','#8e44ad']];
+let _hMediaRec=null, _hChunks=[], _hActive=null, _hTimer=null, _hStream=null;
+function openHoer(id){
+  const song=findSongById(id); if(!song) return;
+  document.getElementById('hoer-songid').value=id;
+  document.getElementById('hoer-songname').textContent=song.name;
+  _hActive=null; setHoerStatus('','');
+  renderHoer();
+  document.getElementById('modal-hoer').classList.add('open');
+}
+function setHoerStatus(t,c){ const el=document.getElementById('hoer-status'); if(el){ el.textContent=t; el.style.color=c||'#666'; } }
+function renderHoer(){
+  const id=document.getElementById('hoer-songid').value;
+  const song=findSongById(id); if(!song) return;
+  const hoer=song.hoer||{};
+  const canRec=hasPermission('lieder');
+  document.getElementById('hoer-body').innerHTML=HOER_VOICES.map(([k,name,color])=>{
+    const url=hoer[k];
+    let ctrl='';
+    if(canRec){
+      if(_hActive===k){
+        ctrl=`<button class="btn btn-sm" style="background:#2c3e50;color:#fff;font-size:.72rem" onclick="stopHoerRecord()">⏹ Stopp & speichern</button>`;
+      } else if(_hActive){
+        ctrl=`<button class="btn btn-sm btn-gray" style="font-size:.72rem;opacity:.5" disabled>🔴 Aufnehmen</button>`;
+      } else {
+        ctrl=`<button class="btn btn-sm" style="background:#e74c3c;color:#fff;font-size:.72rem" onclick="startHoerRecord('${k}')">🔴 ${url?'Neu aufnehmen':'Aufnehmen'}</button>`
+            + (url?`<button class="btn btn-sm btn-gray" style="font-size:.72rem" onclick="deleteHoer('${k}')">🗑</button>`:'');
+      }
+    }
+    return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="width:52px;font-weight:700;color:${color};font-size:.85rem">${name}</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${ctrl}</div>
+      </div>
+      ${url?`<audio controls preload="none" src="${esc(url)}" style="width:100%;height:36px;margin-top:6px"></audio>`:(canRec?'':`<div style="font-size:.78rem;color:#aaa;margin-top:2px">— noch keine Aufnahme —</div>`)}
+    </div>`;
+  }).join('');
+}
+async function startHoerRecord(voice){
+  if(!hasPermission('lieder')) return;
+  if(_hActive) return;
+  if(!navigator.mediaDevices || !window.MediaRecorder){ setHoerStatus('❌ Aufnahme wird auf diesem Gerät nicht unterstützt.','#e74c3c'); return; }
+  try{ _hStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ setHoerStatus('❌ Mikrofon-Zugriff verweigert.','#e74c3c'); return; }
+  _hChunks=[];
+  let mime='audio/webm';
+  if(!MediaRecorder.isTypeSupported(mime)) mime = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+  try{ _hMediaRec = mime ? new MediaRecorder(_hStream,{mimeType:mime}) : new MediaRecorder(_hStream); }
+  catch(e){ _hMediaRec = new MediaRecorder(_hStream); }
+  _hMediaRec.ondataavailable=e=>{ if(e.data && e.data.size) _hChunks.push(e.data); };
+  _hMediaRec.onstop=()=>uploadHoer(voice);
+  _hActive=voice; _hMediaRec.start();
+  renderHoer();
+  let sec=0; setHoerStatus('🔴 Aufnahme läuft… 0 s','#e74c3c');
+  _hTimer=setInterval(()=>{ sec++; setHoerStatus('🔴 Aufnahme läuft… '+sec+' s','#e74c3c'); },1000);
+}
+function stopHoerRecord(){
+  if(_hTimer){ clearInterval(_hTimer); _hTimer=null; }
+  if(_hMediaRec && _hMediaRec.state==='recording') _hMediaRec.stop();
+  if(_hStream){ _hStream.getTracks().forEach(t=>t.stop()); _hStream=null; }
+}
+async function uploadHoer(voice){
+  const id=document.getElementById('hoer-songid').value;
+  const mime=(_hMediaRec&&_hMediaRec.mimeType)||'audio/webm';
+  const blob=new Blob(_hChunks,{type:mime});
+  if(!blob.size){ _hActive=null; renderHoer(); setHoerStatus('❌ Leere Aufnahme.','#e74c3c'); return; }
+  setHoerStatus('⏳ Wird gespeichert…','#2980b9');
+  try{
+    const ref=window._fbStorage.ref('noten/hoer-'+id+'-'+voice);  // single-level Pfad (passt zu den Storage-Regeln)
+    await ref.put(blob,{contentType:mime});
+    const url=await ref.getDownloadURL();
+    const p=songPos(id); const song=D.seasons[p[0]].songs[p[1]];
+    if(!song.hoer) song.hoer={};
+    song.hoer[voice]=url;
+    await fetch(DB+'/chorproben/seasons/'+p[0]+'/songs/'+p[1]+'/hoer/'+voice+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(url)});
+    _hActive=null; renderHoer(); renderLieder();
+    setHoerStatus('✅ Aufnahme gespeichert!','#27ae60'); setTimeout(()=>setHoerStatus('',''),2500);
+  }catch(e){ _hActive=null; renderHoer(); setHoerStatus('❌ Fehler: '+(e.message||e),'#e74c3c'); }
+}
+async function deleteHoer(voice){
+  if(!hasPermission('lieder')) return;
+  if(!confirm('Aufnahme dieser Stimme löschen?')) return;
+  const id=document.getElementById('hoer-songid').value;
+  const p=songPos(id); const song=D.seasons[p[0]].songs[p[1]];
+  if(song.hoer) delete song.hoer[voice];
+  await fetch(DB+'/chorproben/seasons/'+p[0]+'/songs/'+p[1]+'/hoer/'+voice+'.json',{method:'DELETE'});
+  try{ await window._fbStorage.ref('noten/hoer-'+id+'-'+voice).delete(); }catch(e){}
+  renderHoer(); renderLieder();
+}
+function closeHoer(){ stopHoerRecord(); _hActive=null; closeModal(); }
 async function saveSongPdfLink(){
   if(!hasPermission('lieder')) return;
   const id=document.getElementById('sp-songid').value;
